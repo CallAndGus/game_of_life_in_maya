@@ -126,6 +126,77 @@ def findNeighbors(graph, mesh, name):
     cmds.select( mesh )
     return neighbors
 
+# Create and initialize a matrix used for rendering
+def createMatrix(name, factor):
+    cmds.select( name )
+    # Extract vertices
+    numVerts = cmds.polyEvaluate( v=True )
+    matrix = []
+    for i in range ( 0, numVerts ):
+        matrix.append( factor )
+    return matrix
+
+# Loads the list of vertices into a matrix
+def loadPattern(matrix, pattern, factor):
+    for i in range ( 0, len( matrix ) ):
+        if i in pattern:
+            matrix[i] = factor
+    return matrix
+
+# Breaks the initial seed selection into a list of vertices
+def enumerateSeed(seed):
+    pattern = []
+    count = 0
+    for s in seed:
+        if ':' not in seed[count].split('.vtx')[1]:
+            start = seed[count].split('.vtx')[1]
+            start = start.split('[')[1]
+            start = start.split(']')[0]
+            stop = ''
+        else:
+            start, stop = (seed[count].split('.vtx')[1]).split(':')
+            start = start.split('[')[1]
+            stop = stop.split(']')[0]
+        if start != '':
+            pattern.append( int(start) )
+        if stop != '':
+            pattern.append( int(stop) )
+        count = count + 1
+    return pattern
+
+# Render the found matrix transforms
+def renderLife(objMap, matrix, stepTime):
+    i = 0
+    if stepTime == 0:
+        for obj in objMap:
+            cmds.setAttr( '{0}.scaleX'.format( obj[0] ), matrix[i][0] )
+            cmds.setAttr( '{0}.scaleY'.format( obj[0] ), matrix[i][1] )
+            cmds.setAttr( '{0}.scaleZ'.format( obj[0] ), matrix[i][2] )
+            cmds.setKeyframe( '{0}.sx'.format( obj[0] ) )
+            cmds.setKeyframe( '{0}.sy'.format( obj[0] ) )
+            cmds.setKeyframe( '{0}.sz'.format( obj[0] ) )
+            i = i + 1
+    else:
+        for obj in objMap:
+            cmds.setKeyframe( '{0}.sx'.format( obj[0] ) )
+            cmds.setKeyframe( '{0}.sy'.format( obj[0] ) )
+            cmds.setKeyframe( '{0}.sz'.format( obj[0] ) )
+            currTime = cmds.currentTime( q=True )
+            cmds.currentTime( currTime + stepTime - 2, edit=True )
+            cmds.setKeyframe( '{0}.sx'.format( obj[0] ) )
+            cmds.setKeyframe( '{0}.sy'.format( obj[0] ) )
+            cmds.setKeyframe( '{0}.sz'.format( obj[0] ) )
+            cmds.currentTime( currTime + stepTime - 1, edit=True )
+            cmds.setAttr( '{0}.scaleX'.format( obj[0] ), matrix[i][0] )
+            cmds.setAttr( '{0}.scaleY'.format( obj[0] ), matrix[i][1] )
+            cmds.setAttr( '{0}.scaleZ'.format( obj[0] ), matrix[i][2] )
+            cmds.setKeyframe( '{0}.sx'.format( obj[0] ) )
+            cmds.setKeyframe( '{0}.sy'.format( obj[0] ) )
+            cmds.setKeyframe( '{0}.sz'.format( obj[0] ) )
+            cmds.currentTime( currTime, edit=True )
+            i = i + 1
+        cmds.currentTime( currTime + stepTime - 1, edit=True )
+
 ##########################
 ### Main Functionality ###
 ##########################
@@ -188,7 +259,7 @@ def startGame( menu, startTimeField, endTimeField, stepTimeField, *args ):
     # Extract vertices
     numVerts = cmds.polyEvaluate( v=True )
     mesh = ['{0}.vtx[{1}:{2}]'.format( name, 0, numVerts - 1 )]
-    objGroup = 'objGroup'
+    objGroup = 'lifeObjGroup'
     objMap = initLife(mesh, name, objGroup)
     
     # Scale object matrix to 'dead' state
@@ -202,23 +273,40 @@ def startGame( menu, startTimeField, endTimeField, stepTimeField, *args ):
     
     # Find neighbors for each vertex
     neighbors = findNeighbors(graph, mesh, name)
-    cmds.xform( objMap[0][0], s=factorEmph )
-    print '{0}: {1}'.format( 0, neighbors[0] )
-    for i in neighbors[0]:
-        cmds.xform( objMap[i][0], s=factorAlive )
-        
-    cmds.xform( objMap[65][0], s=factorEmph )
-    print '{0}: {1}'.format( 65, neighbors[65] )
-    for i in neighbors[65]:
-        cmds.xform( objMap[i][0], s=factorAlive )
-        
-    cmds.xform( objMap[211][0], s=factorEmph )
-    print '{0}: {1}'.format( 211, neighbors[211] )
-    for i in neighbors[211]:
-        cmds.xform( objMap[i][0], s=factorAlive )
+    
+    # Create storage matrices
+    matrixA = createMatrix(name, factorDead)
+    matrixB = createMatrix(name, factorDead)
     
     # Load seed pattern
-    #matrixA = createMatrix(mesh, name)
+    pattern = enumerateSeed(seed)
+    matrixA = loadPattern(matrixA, pattern, factorAlive)
+    
+    print matrixA
+    
+    # Render first frame
+    cmds.currentTime( int(startTime), edit=True )
+    renderLife(objMap, matrixA, 0)
+    
+    # Run the Game of Life on the mesh
+    currTime = int(startTime)
+    while currTime < int(endTime):
+        # Create matrix B from matrix A
+        for i in range ( 0, numVerts ):
+            count = 0
+            for n in neighbors[i]:
+                if matrixA[n] == factorAlive:
+                    count = count + 1
+            if count == 2:
+                matrixB[i] = matrixA[i]
+            if count == 3:
+                matrixB[i] = factorAlive
+            if count < 2 or count > 3:
+                matrixB[i] = factorDead
+        for i in range ( 0, numVerts ):
+            matrixA[i] = matrixB[i]
+        renderLife(objMap, matrixA, int(stepTime))
+        currTime = currTime + int(stepTime)
 
 ##########################
 ####### Run Script #######
