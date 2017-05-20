@@ -1,19 +1,11 @@
 import maya.cmds as cmds
 
+# Display window
+displayWindow()
+
 ##########################
 ## Game logic functions ##
 ##########################
-
-# Create and display menu system
-def displayWindow():
-    if( cmds.window( "Game Of Life Tool", exists=True ) ) :
-        cmds.deleteUI( "Game Of Life Tool" )
-    window = cmds.window( title="Game Of Life Tool", iconName='GOLTool', widthHeight=(200, 55) )
-    cmds.columnLayout( adjustableColumn=True )
-    cmds.button( label='Blank' )
-    cmds.button( label='Close', command=('cmds.deleteUI(\"' + window + '\", window=True )') )
-    cmds.setParent( '..' )
-    cmds.showWindow( window )
 
 # Initialize groups of cubes that will be rendered
 def initLife(mesh, name, id):
@@ -28,7 +20,7 @@ def initLife(mesh, name, id):
     for i in range ( 0, numVerts ):
         row = ''
         map.append( row )
-    for i in range ( int(start), int(stop) ):
+    for i in range ( int(start), int(stop) + 1 ):
         # Find the coordinates of each vertex
         trans = cmds.pointPosition( '{0}.vtx[{1}]'.format( name, i ) )
         # Create a cube at each vertex
@@ -57,10 +49,10 @@ def createGraph(mesh, name):
     numVerts = cmds.polyEvaluate( v=True )
     # Initialize graph
     graph = []
-    for i in range ( 0, numVerts ):
+    for i in range ( 0, numVerts + 1 ):
         graph.append( [] )
     # Fill graph with vertices
-    for i in range ( int(start), int(stop) ):
+    for i in range ( int(start), int(stop) + 1 ):
         cmds.select( '{0}.vtx[{1}]'.format( name, i ) )
         found = cmds.polyInfo( ve=True )
         #print found
@@ -91,7 +83,7 @@ def findNeighbors(graph, mesh, name):
     neighbors = []
     for i in range ( 0, len( graph ) - 1 ):
         neighbors.append( [] )
-    for i in range ( int(start), int(stop) ):
+    for i in range ( int(start), int(stop) + 1 ):
         # Find 1st level neighbors
         for j in graph[i]:
             cmds.select( '{0}.e[{1}]'.format( name, j ) )
@@ -105,25 +97,25 @@ def findNeighbors(graph, mesh, name):
         # Find 2nd level neighbors
         add = []
         for k in neighbors[i]:
-            print 'Current Vertex: {0}'.format( i )
-            print 'Found Neighbor: {0}'.format( k )
+            #print 'Current Vertex: {0}'.format( i )
+            #print 'Found Neighbor: {0}'.format( k )
             for j in graph[k]:
                 cmds.select( '{0}.e[{1}]'.format( name, j ) )
                 found = cmds.polyInfo( ev=True )
                 tokens = found[0].split( ' ' )
-                print tokens
+                #print tokens
                 current = -1
                 # Skip over non-alphanumeric strings
                 for t in tokens:
                     tmp = '{0}'.format( t )
                     if (tmp.isalnum() == True) and (tmp != 'EDGE') and (int(tmp) != k) and (int(tmp) != i):
                         current = int(tmp)
-                print 'Current: {0}'.format( current )
+                #print 'Current: {0}'.format( current )
                 # Find n's neighbors and compare with k's neighbors
                 for n in neighbors[i]:
                     if (n == k) or (current == -1):
                         continue
-                    print 'n: {0}'.format( n )
+                    #print 'n: {0}'.format( n )
                     for m in graph[n]:
                         cmds.select( '{0}.e[{1}]'.format( name, m ) )
                         found = cmds.polyInfo( ev=True )
@@ -132,7 +124,7 @@ def findNeighbors(graph, mesh, name):
                         for t in tokens:
                             tmp = '{0}'.format( t )
                             if (tmp.isalnum() == True) and (tmp != 'EDGE') and (int(tmp) != n):
-                                print 'Shared: ' + tmp
+                                #print 'Shared: ' + tmp
                                 if (int(tmp) == current):
                                     add.append( int(tmp) )
         for a in add:
@@ -146,51 +138,92 @@ def findNeighbors(graph, mesh, name):
 ### Main Functionality ###
 ##########################
 
-# Display menu window
-displayWindow()
+# Create and display menu system
+def displayWindow():
+    menu = cmds.window( title="Game Of Life Tool", iconName='GOLTool', widthHeight=(350, 400) )
+    scrollLayout = cmds.scrollLayout( verticalScrollBarThickness=16 )
+    cmds.flowLayout( columnSpacing=10 )
+    cmds.columnLayout( cat=('both', 25), rs=10, cw=340 )
+    cmds.text( l="\nThis is the \"Game of Life Tool\"! Use this tool to run Conway's Game of Life on a the surface of a selected polygonal object [input] given a starting seed pattern of selected vertices [selection]. A polygon object and seed vertices are needed.\n\n", ww=True, al="left" )
+    cmds.text( l="To run:\n1) Select the reference vertices for the seed.\n2) Input the information in the fields below.\n3) Click \"Run\".", al="left" )
+    cmds.text( label='Enter the time at which to start the animation:', al='left', ww=True )
+    startTimeField = cmds.textField()
+    cmds.text( label='Enter the time at which to end the animation:', al='left', ww=True )
+    endTimeField = cmds.textField()
+    cmds.text( label='Enter the step time (this affects the speed of the animation):', al='left', ww=True )
+    stepTimeField = cmds.textField()
+    cmds.button( label='Run', command='main( menu )' )
+    cmds.text( l="\n", al='left' )
+    cmds.showWindow( menu )
 
-# Store mesh variables
-mesh = cmds.ls( selection=True )
-name = mesh[0].split('.vtx')[0]
-
-# Initialize pixels for rendering
-objGroup = 'objGroup'
-objMap = initLife(mesh, name, objGroup)
-count = 0
-for obj in objMap:
-    print '{0}: {1}'.format( count, obj )
-    count = count + 1
-
-# Scale object matrix to 'dead' state
-factorDead = (0.0, 0.0, 0.0)
-factorAlive = (1.0, 1.0, 1.0)
-factorEmph = (2.0, 2.0, 2.0)
-scaleObjGroup(objGroup, factorDead)
-
-# Transfer the selected vertices into a graph
-graph = createGraph(mesh, name)
-
-# Find neighbors for each vertex
-neighbors = findNeighbors(graph, mesh, name)
-cmds.xform( objMap[0][0], s=factorEmph )
-print '{0}: {1}'.format( 0, neighbors[0] )
-for i in neighbors[0]:
-    cmds.xform( objMap[i][0], s=factorAlive )
+def main( menu ):
+    # Grab user input
+    seed = cmds.ls( selection=True )   
+    if (len( seed ) == 0):
+        print 'ERROR: Please load a seed pattern by selecting vertices on a (single) mesh.\n'
+        # Delete menu window
+        cmds.deleteUI( menu, window=True )
+        displayWindow()
+        return
+    name = seed[0].split('.vtx')[0]
+    startTime = cmds.textField(startTimeField, q=True, tx=True )
+    if (startTime == ''):
+        print 'ERROR: Please enter a starting time.\n'
+        # Delete menu window
+        cmds.deleteUI( menu, window=True )
+        displayWindow()
+        return
+    endTime = cmds.textField(endTimeField, q=True, tx=True )
+    if (endTime == ''):
+        print 'ERROR: Please enter an ending time.\n'
+        # Delete menu window
+        cmds.deleteUI( menu, window=True )
+        displayWindow()
+        return
+    stepTime = cmds.textField(stepTimeField, q=True, tx=True )
+    if (stepTime == ''):
+        print 'ERROR: Please enter a step time.\n'
+        # Delete menu window
+        cmds.deleteUI( menu, window=True )
+        displayWindow()
+        return
+    # Delete menu window
+    cmds.deleteUI( menu, window=True )
+       
+    # Initialize pixels for rendering
+    cmds.select( name )
     
-cmds.xform( objMap[45][0], s=factorEmph )
-print '{0}: {1}'.format( 45, neighbors[45] )
-for i in neighbors[45]:
-    cmds.xform( objMap[i][0], s=factorAlive )
+    # Extract vertices
+    numVerts = cmds.polyEvaluate( v=True )
+    mesh = ['{0}.vtx[{1}:{2}]'.format( name, 0, numVerts - 1 )]
+    objGroup = 'objGroup'
+    objMap = initLife(mesh, name, objGroup)
     
-cmds.xform( objMap[90][0], s=factorEmph )
-print '{0}: {1}'.format( 90, neighbors[90] )
-for i in neighbors[90]:
-    cmds.xform( objMap[i][0], s=factorAlive )
-
-count = 0
-for g in graph:
-    print '{0}: {1}'.format( count, g )
-    count = count + 1
-
-# Load seed pattern
-
+    # Scale object matrix to 'dead' state
+    factorDead = (0.0, 0.0, 0.0)
+    factorAlive = (1.0, 1.0, 1.0)
+    factorEmph = (2.0, 2.0, 2.0)
+    scaleObjGroup(objGroup, factorDead)
+    
+    # Transfer the selected vertices into a graph
+    graph = createGraph(mesh, name)
+    
+    # Find neighbors for each vertex
+    neighbors = findNeighbors(graph, mesh, name)
+    cmds.xform( objMap[0][0], s=factorEmph )
+    print '{0}: {1}'.format( 0, neighbors[0] )
+    for i in neighbors[0]:
+        cmds.xform( objMap[i][0], s=factorAlive )
+        
+    cmds.xform( objMap[65][0], s=factorEmph )
+    print '{0}: {1}'.format( 65, neighbors[65] )
+    for i in neighbors[65]:
+        cmds.xform( objMap[i][0], s=factorAlive )
+        
+    cmds.xform( objMap[211][0], s=factorEmph )
+    print '{0}: {1}'.format( 211, neighbors[211] )
+    for i in neighbors[211]:
+        cmds.xform( objMap[i][0], s=factorAlive )
+    
+    # Load seed pattern
+    
