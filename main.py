@@ -21,7 +21,7 @@ def initLife(mesh, name, id):
         # Create a cube at each vertex
         obj = cmds.polyCube()
         map = createObjMap(map, i, obj)
-        cmds.parent( obj, group )
+        cmds.parent( obj[0], group )
         cmds.xform( obj, t=(trans[0], trans[1], trans[2]) )
     cmds.select( mesh )
     return map
@@ -157,9 +157,12 @@ def enumerateSeed(seed):
             start, stop = (seed[count].split('.vtx')[1]).split(':')
             start = start.split('[')[1]
             stop = stop.split(']')[0]
-        if start != '':
+        if start != '' and stop != '':
+            for i in range ( int(start), int(stop) + 1 ):
+                pattern.append( i )
+        elif start != '':
             pattern.append( int(start) )
-        if stop != '':
+        elif stop != '':
             pattern.append( int(stop) )
         count = count + 1
     return pattern
@@ -264,7 +267,7 @@ def startGame( menu, startTimeField, endTimeField, stepTimeField, *args ):
     
     # Scale object matrix to 'dead' state
     factorDead = (0.0, 0.0, 0.0)
-    factorAlive = (1.0, 1.0, 1.0)
+    factorAlive = (2.5, 2.5, 2.5)
     factorEmph = (2.0, 2.0, 2.0)
     scaleObjGroup(objGroup, factorDead)
     
