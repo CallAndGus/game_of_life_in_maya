@@ -1,7 +1,5 @@
 import maya.cmds as cmds
-
-# Display window
-displayWindow()
+from functools import partial
 
 ##########################
 ## Game logic functions ##
@@ -152,11 +150,11 @@ def displayWindow():
     endTimeField = cmds.textField()
     cmds.text( label='Enter the step time (this affects the speed of the animation):', al='left', ww=True )
     stepTimeField = cmds.textField()
-    cmds.button( label='Run', command='main( menu )' )
+    cmds.button( label='Run', command=partial( startGame, menu, startTimeField, endTimeField, stepTimeField ) )
     cmds.text( l="\n", al='left' )
     cmds.showWindow( menu )
 
-def main( menu ):
+def startGame( menu, startTimeField, endTimeField, stepTimeField, *args ):
     # Grab user input
     seed = cmds.ls( selection=True )   
     if (len( seed ) == 0):
@@ -226,4 +224,11 @@ def main( menu ):
         cmds.xform( objMap[i][0], s=factorAlive )
     
     # Load seed pattern
-    
+
+##########################
+####### Run Script #######
+##########################
+
+# Display window
+displayWindow()
+
