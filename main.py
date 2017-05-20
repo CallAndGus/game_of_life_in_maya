@@ -8,9 +8,6 @@ from functools import partial
 # Initialize groups of cubes that will be rendered
 def initLife(mesh, name, id):
     group = cmds.group( em=True, n=id )
-    start, stop = (mesh[0].split('.vtx')[1]).split(':')
-    start = start.split('[')[1]
-    stop = stop.split(']')[0]
     cmds.select( name )
     # Extract vertices
     numVerts = cmds.polyEvaluate( v=True )
@@ -18,7 +15,7 @@ def initLife(mesh, name, id):
     for i in range ( 0, numVerts ):
         row = ''
         map.append( row )
-    for i in range ( int(start), int(stop) + 1 ):
+    for i in range ( 0, numVerts ):
         # Find the coordinates of each vertex
         trans = cmds.pointPosition( '{0}.vtx[{1}]'.format( name, i ) )
         # Create a cube at each vertex
@@ -37,9 +34,6 @@ def scaleObjGroup(objGroup, factor):
 
 # Create graph, V x E
 def createGraph(mesh, name):
-    start, stop = (mesh[0].split('.vtx')[1]).split(':')
-    start = start.split('[')[1]
-    stop = stop.split(']')[0]
     cmds.select( name )
     # Extract edges
     numEdges = cmds.polyEvaluate( e=True )
@@ -47,10 +41,10 @@ def createGraph(mesh, name):
     numVerts = cmds.polyEvaluate( v=True )
     # Initialize graph
     graph = []
-    for i in range ( 0, numVerts + 1 ):
+    for i in range ( 0, numVerts ):
         graph.append( [] )
     # Fill graph with vertices
-    for i in range ( int(start), int(stop) + 1 ):
+    for i in range ( 0, numVerts ):
         cmds.select( '{0}.vtx[{1}]'.format( name, i ) )
         found = cmds.polyInfo( ve=True )
         #print found
@@ -74,14 +68,14 @@ def createObjMap(map, key, value):
 
 # Creates a 2D array listing all neighbors of a given index
 def findNeighbors(graph, mesh, name):
-    start, stop = (mesh[0].split('.vtx')[1]).split(':')
-    start = start.split('[')[1]
-    stop = stop.split(']')[0]
     # Initialize neighbors array
     neighbors = []
-    for i in range ( 0, len( graph ) - 1 ):
+    cmds.select( name )
+    # Extract vertices
+    numVerts = cmds.polyEvaluate( v=True )
+    for i in range ( 0, numVerts ):
         neighbors.append( [] )
-    for i in range ( int(start), int(stop) + 1 ):
+    for i in range ( 0, numVerts ):
         # Find 1st level neighbors
         for j in graph[i]:
             cmds.select( '{0}.e[{1}]'.format( name, j ) )
@@ -224,6 +218,7 @@ def startGame( menu, startTimeField, endTimeField, stepTimeField, *args ):
         cmds.xform( objMap[i][0], s=factorAlive )
     
     # Load seed pattern
+    #matrixA = createMatrix(mesh, name)
 
 ##########################
 ####### Run Script #######
