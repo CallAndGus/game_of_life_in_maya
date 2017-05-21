@@ -1,4 +1,6 @@
 import maya.cmds as cmds
+import maya.OpenMaya as om
+import numpy as np
 from functools import partial
 
 ##########################
@@ -6,7 +8,8 @@ from functools import partial
 ##########################
 
 # Initialize groups of cubes that will be rendered
-def initLife(mesh, name, id):
+def initLife(mesh, name, id, neighbors):
+    print 'Initializing objects...'
     group = cmds.group( em=True, n=id )
     cmds.select( name )
     # Extract vertices
@@ -18,11 +21,57 @@ def initLife(mesh, name, id):
     for i in range ( 0, numVerts ):
         # Find the coordinates of each vertex
         trans = cmds.pointPosition( '{0}.vtx[{1}]'.format( name, i ) )
-        # Create a cube at each vertex
+        neighborVectors = []
+        # Find the vectors from each vertex to each neighbor
+        for n in neighbors[i]:
+            vector = []
+            coord = cmds.pointPosition( '{0}.vtx[{1}]'.format( name, n ) )
+            vector.append( coord[0] - trans[0] )
+            vector.append( coord[1] - trans[1] )
+            vector.append( coord[2] - trans[2] )
+            neighborVectors.append( vector )
+        # Find the normal
+        normal = [0, 0, 0]
+        for vector in neighborVectors:
+            normal[0] = normal[0] + vector[0]
+            normal[1] = normal[1] + vector[1]
+            normal[2] = normal[2] + vector[2]
+        #cmds.select( '{0}.vtx[{1}]'.format( name, i ) )
+        #list = cmds.polyNormalPerVertex( q=1, xyz=1 )
+        #s = len(list) / 3
+        #normal=[0,0,0]
+        #while len(list):
+        #    normal = [normal[0] + list.pop(0), normal[1] + list.pop(0), normal[2] + list.pop(0)]
+        #normal = [normal[0] / s, normal[1] / s, normal[2] / s]
+        # Normalize the vector
+        normVector = om.MVector( normal[0], normal[1], normal[2] )
+        normVector.normalize()
+        # Create a cube and add to the group
         obj = cmds.polyCube()
         map = createObjMap(map, i, obj)
         cmds.parent( obj[0], group )
+        # Find the location of each vertex
+        curr = []
+        curr.append( cmds.getAttr( obj, '{0}.rotateX'.format( obj[0] ) ) )
+        curr.append( cmds.getAttr( obj, '{0}.rotateY'.format( obj[0] ) ) )
+        curr.append( cmds.getAttr( obj, '{0}.rotateZ'.format( obj[0] ) ) )
+        currVector = om.MVector( curr[0], curr[1], curr[2] )
+        currVector.normalize()
+        # Find the angle between the normal and the current angle
+        currAngle = [0, 0, 0]
+        currAngle[0] = np.rad2deg( currVector.angle( om.MVector( 1, 0, 0 ) ) )
+        currAngle[1] = np.rad2deg( currVector.angle( om.MVector( 0, 1, 0 ) ) )
+        currAngle[2] = np.rad2deg( currVector.angle( om.MVector( 0, 0, 1 ) ) )
+        normAngle = [0, 0, 0]
+        normAngle[0] = np.rad2deg( normVector.angle( om.MVector( 1, 0, 0 ) ) )
+        normAngle[1] = np.rad2deg( normVector.angle( om.MVector( 0, 1, 0 ) ) )
+        normAngle[2] = np.rad2deg( normVector.angle( om.MVector( 0, 0, 1 ) ) )
+        rot = [0, 0, 0]
+        rot[0] = (normAngle[0] + currAngle[0]) / 2
+        rot[1] = (normAngle[1] + currAngle[1]) / 2
+        rot[2] = (normAngle[2] + currAngle[2]) / 2
         cmds.xform( obj, t=(trans[0], trans[1], trans[2]) )
+        cmds.xform( obj, r=True, ro=(rot[0], rot[1], rot[2]) )
     cmds.select( mesh )
     return map
 
@@ -34,6 +83,7 @@ def scaleObjGroup(objGroup, factor):
 
 # Create graph, V x E
 def createGraph(mesh, name):
+    print 'Creating graph...'
     cmds.select( name )
     # Extract edges
     numEdges = cmds.polyEvaluate( e=True )
@@ -68,6 +118,7 @@ def createObjMap(map, key, value):
 
 # Creates a 2D array listing all neighbors of a given index
 def findNeighbors(graph, mesh, name):
+    print 'Finding neighbors...'
     # Initialize neighbors array
     neighbors = []
     cmds.select( name )
@@ -76,6 +127,7 @@ def findNeighbors(graph, mesh, name):
     for i in range ( 0, numVerts ):
         neighbors.append( [] )
     for i in range ( 0, numVerts ):
+        print '... pass {0} out of {1}'.format( i, numVerts - 1 )
         # Find 1st level neighbors
         for j in graph[i]:
             cmds.select( '{0}.e[{1}]'.format( name, j ) )
@@ -168,37 +220,38 @@ def enumerateSeed(seed):
     return pattern
 
 # Render the found matrix transforms
-def renderLife(objMap, matrix, stepTime):
+def renderLife(objMap, curr, next, stepTime):
     i = 0
-    if stepTime == 0:
+    if stepTime < 2:
         for obj in objMap:
-            cmds.setAttr( '{0}.scaleX'.format( obj[0] ), matrix[i][0] )
-            cmds.setAttr( '{0}.scaleY'.format( obj[0] ), matrix[i][1] )
-            cmds.setAttr( '{0}.scaleZ'.format( obj[0] ), matrix[i][2] )
+            cmds.setAttr( '{0}.scaleX'.format( obj[0] ), next[i][0] )
+            cmds.setAttr( '{0}.scaleY'.format( obj[0] ), next[i][1] )
+            cmds.setAttr( '{0}.scaleZ'.format( obj[0] ), next[i][2] )
             cmds.setKeyframe( '{0}.sx'.format( obj[0] ) )
             cmds.setKeyframe( '{0}.sy'.format( obj[0] ) )
             cmds.setKeyframe( '{0}.sz'.format( obj[0] ) )
             i = i + 1
     else:
         for obj in objMap:
-            cmds.setKeyframe( '{0}.sx'.format( obj[0] ) )
-            cmds.setKeyframe( '{0}.sy'.format( obj[0] ) )
-            cmds.setKeyframe( '{0}.sz'.format( obj[0] ) )
-            currTime = cmds.currentTime( q=True )
-            cmds.currentTime( currTime + stepTime - 2, edit=True )
-            cmds.setKeyframe( '{0}.sx'.format( obj[0] ) )
-            cmds.setKeyframe( '{0}.sy'.format( obj[0] ) )
-            cmds.setKeyframe( '{0}.sz'.format( obj[0] ) )
-            cmds.currentTime( currTime + stepTime - 1, edit=True )
-            cmds.setAttr( '{0}.scaleX'.format( obj[0] ), matrix[i][0] )
-            cmds.setAttr( '{0}.scaleY'.format( obj[0] ), matrix[i][1] )
-            cmds.setAttr( '{0}.scaleZ'.format( obj[0] ), matrix[i][2] )
-            cmds.setKeyframe( '{0}.sx'.format( obj[0] ) )
-            cmds.setKeyframe( '{0}.sy'.format( obj[0] ) )
-            cmds.setKeyframe( '{0}.sz'.format( obj[0] ) )
-            cmds.currentTime( currTime, edit=True )
+            if curr[i] != next[i][0]:
+                cmds.setKeyframe( '{0}.sx'.format( obj[0] ) )
+                cmds.setKeyframe( '{0}.sy'.format( obj[0] ) )
+                cmds.setKeyframe( '{0}.sz'.format( obj[0] ) )
+                currTime = cmds.currentTime( q=True )
+                cmds.currentTime( currTime + stepTime - 1, edit=True )
+                cmds.setKeyframe( '{0}.sx'.format( obj[0] ) )
+                cmds.setKeyframe( '{0}.sy'.format( obj[0] ) )
+                cmds.setKeyframe( '{0}.sz'.format( obj[0] ) )
+                cmds.currentTime( currTime + stepTime, edit=True )
+                cmds.setAttr( '{0}.scaleX'.format( obj[0] ), next[i][0] )
+                cmds.setAttr( '{0}.scaleY'.format( obj[0] ), next[i][1] )
+                cmds.setAttr( '{0}.scaleZ'.format( obj[0] ), next[i][2] )
+                cmds.setKeyframe( '{0}.sx'.format( obj[0] ) )
+                cmds.setKeyframe( '{0}.sy'.format( obj[0] ) )
+                cmds.setKeyframe( '{0}.sz'.format( obj[0] ) )
+                cmds.currentTime( currTime, edit=True )
             i = i + 1
-        cmds.currentTime( currTime + stepTime - 1, edit=True )
+    cmds.currentTime( currTime + stepTime, edit=True )
 
 ##########################
 ### Main Functionality ###
@@ -262,20 +315,19 @@ def startGame( menu, startTimeField, endTimeField, stepTimeField, *args ):
     # Extract vertices
     numVerts = cmds.polyEvaluate( v=True )
     mesh = ['{0}.vtx[{1}:{2}]'.format( name, 0, numVerts - 1 )]
+    # Transfer the mesh into a graph of V x E
+    graph = createGraph(mesh, name)
+    # Find neighbors for each vertex
+    neighbors = findNeighbors(graph, mesh, name)
     objGroup = 'lifeObjGroup'
-    objMap = initLife(mesh, name, objGroup)
+    objMap = initLife(mesh, name, objGroup, neighbors)
+    return
     
     # Scale object matrix to 'dead' state
     factorDead = (0.0, 0.0, 0.0)
-    factorAlive = (2.5, 2.5, 2.5)
+    factorAlive = (0.5, 0.5, 0.5)
     factorEmph = (2.0, 2.0, 2.0)
     scaleObjGroup(objGroup, factorDead)
-    
-    # Transfer the selected vertices into a graph
-    graph = createGraph(mesh, name)
-    
-    # Find neighbors for each vertex
-    neighbors = findNeighbors(graph, mesh, name)
     
     # Create storage matrices
     matrixA = createMatrix(name, factorDead)
