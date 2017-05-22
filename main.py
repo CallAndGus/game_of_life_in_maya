@@ -1,16 +1,29 @@
 import maya.cmds as cmds
 import maya.OpenMaya as om
 import numpy as np
+print np.__version__
 from functools import partial
 
 ##########################
 ## Game logic functions ##
 ##########################
 
+# Define custom matrix multiply because numpy1.9.2 does not support matmul module
+def matrixMul(a, b):
+    tmpRow = []
+    tmpCol = []
+    for i in range( 0, len(a) ):
+        # Find temporary row and column for the dot product
+        tmpRow = a[i]
+        for j in range( 0, len(b[i]) ):
+            for k in range( 0, len(b) ):
+                tmpCol.append( b[k][j] )
+
 # Initialize groups of cubes that will be rendered
 def initLife(mesh, name, id, neighbors):
     print 'Initializing objects...'
     group = cmds.group( em=True, n=id )
+    jointGroup = cmds.group( em=True, n='jointGroup' )
     cmds.select( name )
     # Extract vertices
     numVerts = cmds.polyEvaluate( v=True )
@@ -21,57 +34,72 @@ def initLife(mesh, name, id, neighbors):
     for i in range ( 0, numVerts ):
         # Find the coordinates of each vertex
         trans = cmds.pointPosition( '{0}.vtx[{1}]'.format( name, i ) )
+        currVector = om.MVector( trans[0], trans[1], trans[2] )
+        currVector.normalize()
         neighborVectors = []
         # Find the vectors from each vertex to each neighbor
         for n in neighbors[i]:
-            vector = []
+            if i == 0:
+                print '{0}: {1}'.format( i, n )
+            vector = om.MVector()
             coord = cmds.pointPosition( '{0}.vtx[{1}]'.format( name, n ) )
-            vector.append( coord[0] - trans[0] )
-            vector.append( coord[1] - trans[1] )
-            vector.append( coord[2] - trans[2] )
+            vector.x = coord[0] - trans[0]
+            vector.y = coord[1] - trans[1]
+            vector.z = coord[2] - trans[2]
             neighborVectors.append( vector )
         # Find the normal
-        normal = [0, 0, 0]
+        normVector = om.MVector( 0, 0, 0 )
         for vector in neighborVectors:
-            normal[0] = normal[0] + vector[0]
-            normal[1] = normal[1] + vector[1]
-            normal[2] = normal[2] + vector[2]
-        #cmds.select( '{0}.vtx[{1}]'.format( name, i ) )
-        #list = cmds.polyNormalPerVertex( q=1, xyz=1 )
-        #s = len(list) / 3
-        #normal=[0,0,0]
-        #while len(list):
-        #    normal = [normal[0] + list.pop(0), normal[1] + list.pop(0), normal[2] + list.pop(0)]
-        #normal = [normal[0] / s, normal[1] / s, normal[2] / s]
-        # Normalize the vector
-        normVector = om.MVector( normal[0], normal[1], normal[2] )
+            normVector = normVector + vector
         normVector.normalize()
-        # Create a cube and add to the group
-        obj = cmds.polyCube()
+        normVector.x = trans[0] - normVector.x
+        normVector.y = trans[1] - normVector.y
+        normVector.z = trans[2] - normVector.z
+        print 'NormVector: {0}, {1}, {2}'.format( normVector.x, normVector.y, normVector.z )
+        newJoint = cmds.joint()
+        cmds.parent( newJoint, jointGroup )
+        cmds.xform( newJoint, t=(normVector.x, normVector.y, normVector.z) )
+        # Create an object and add to the group
+        obj = cmds.polyCone()
         map = createObjMap(map, i, obj)
         cmds.parent( obj[0], group )
-        # Find the location of each vertex
-        curr = []
-        curr.append( cmds.getAttr( obj, '{0}.rotateX'.format( obj[0] ) ) )
-        curr.append( cmds.getAttr( obj, '{0}.rotateY'.format( obj[0] ) ) )
-        curr.append( cmds.getAttr( obj, '{0}.rotateZ'.format( obj[0] ) ) )
-        currVector = om.MVector( curr[0], curr[1], curr[2] )
-        currVector.normalize()
-        # Find the angle between the normal and the current angle
-        currAngle = [0, 0, 0]
-        currAngle[0] = np.rad2deg( currVector.angle( om.MVector( 1, 0, 0 ) ) )
-        currAngle[1] = np.rad2deg( currVector.angle( om.MVector( 0, 1, 0 ) ) )
-        currAngle[2] = np.rad2deg( currVector.angle( om.MVector( 0, 0, 1 ) ) )
-        normAngle = [0, 0, 0]
-        normAngle[0] = np.rad2deg( normVector.angle( om.MVector( 1, 0, 0 ) ) )
-        normAngle[1] = np.rad2deg( normVector.angle( om.MVector( 0, 1, 0 ) ) )
-        normAngle[2] = np.rad2deg( normVector.angle( om.MVector( 0, 0, 1 ) ) )
-        rot = [0, 0, 0]
-        rot[0] = (normAngle[0] + currAngle[0]) / 2
-        rot[1] = (normAngle[1] + currAngle[1]) / 2
-        rot[2] = (normAngle[2] + currAngle[2]) / 2
+        # Rotate the object to the normal
+        normVector.normalize()
+        xAxisVector = om.MVector( 1.0, 0.0, 0.0 )
+        yAxisVector = om.MVector( 0.0, 1.0, 0.0 )
+        zAxisVector = om.MVector( 0.0, 0.0, 1.0 )
+        # Find x rotation
+        t = normVector.angle( xAxisVector )
+        print 'Degree x: {0}'.format( np.rad2deg( t ) )
+        xMatrix = np.matrix( '{0}, {1}, {2}, {3}; {4}, {5}, {6}, {7}; {8}, {9}, {10}, {11}; {12}, {13}, {14}, {15}'.format( \
+            1.0, 0.0, 0.0, 0.0, 0.0, \
+            float(np.cos(t)), float(np.sin(t)), 0.0, 0.0, \
+            float(-np.sin(t)), float(np.cos(t)), 0.0, \
+            0.0, 0.0, 0.0, 1.0) )
+        # Find y rotation
+        t = normVector.angle( yAxisVector )
+        print 'Degree y: {0}'.format( np.rad2deg( t ) )
+        yMatrix = np.matrix( '{0}, {1}, {2}, {3}; {4}, {5}, {6}, {7}; {8}, {9}, {10}, {11}; {12}, {13}, {14}, {15}'.format( \
+            float(np.cos(t)), 0.0, float(-np.sin(t)), 0.0, \
+            0.0, 1.0, 0.0, 0.0, \
+            float(np.sin(t)), 0.0, float(np.cos(t)), 0.0, \
+            0.0, 0.0, 0.0, 1.0) )
+        # Find z rotation
+        t = normVector.angle( zAxisVector )
+        print 'Degree z: {0}'.format( np.rad2deg( t ) )
+        zMatrix = np.matrix( '{0}, {1}, {2}, {3}; {4}, {5}, {6}, {7}; {8}, {9}, {10}, {11}; {12}, {13}, {14}, {15}'.format( \
+            float(np.cos(t)), float(np.sin(t)), 0.0, 0.0, \
+            float(-np.sin(t)), float(np.cos(t)), 0.0, 0.0, \
+            0.0, 0.0, 1.0, 0.0, \
+            0.0, 0.0, 0.0, 1.0) )
+        # Store final matrix using matrix multiplication
+        finalMatrix = xMatrix * yMatrix * zMatrix
+        # Transform the final matrix into the input rotation matrix
+        rotMatrix = finalMatrix.getA1()
+        print rotMatrix
+        cmds.xform( obj, r=True, matrix=rotMatrix )
+        # Translate object to vertex
         cmds.xform( obj, t=(trans[0], trans[1], trans[2]) )
-        cmds.xform( obj, r=True, ro=(rot[0], rot[1], rot[2]) )
     cmds.select( mesh )
     return map
 
@@ -325,7 +353,7 @@ def startGame( menu, startTimeField, endTimeField, stepTimeField, *args ):
     
     # Scale object matrix to 'dead' state
     factorDead = (0.0, 0.0, 0.0)
-    factorAlive = (0.5, 0.5, 0.5)
+    factorAlive = (0.5, 0.1, 0.5)
     factorEmph = (2.0, 2.0, 2.0)
     scaleObjGroup(objGroup, factorDead)
     
