@@ -8,17 +8,6 @@ from functools import partial
 ## Game logic functions ##
 ##########################
 
-# Define custom matrix multiply because numpy1.9.2 does not support matmul module
-def matrixMul(a, b):
-    tmpRow = []
-    tmpCol = []
-    for i in range( 0, len(a) ):
-        # Find temporary row and column for the dot product
-        tmpRow = a[i]
-        for j in range( 0, len(b[i]) ):
-            for k in range( 0, len(b) ):
-                tmpCol.append( b[k][j] )
-
 # Initialize groups of cubes that will be rendered
 def initLife(mesh, name, id, neighbors):
     print 'Initializing objects...'
@@ -55,49 +44,78 @@ def initLife(mesh, name, id, neighbors):
         normVector.x = trans[0] - normVector.x
         normVector.y = trans[1] - normVector.y
         normVector.z = trans[2] - normVector.z
-        print 'NormVector: {0}, {1}, {2}'.format( normVector.x, normVector.y, normVector.z )
+        normVector.normalize()
+        # Create joint in order to test the calculated normal
         newJoint = cmds.joint()
         cmds.parent( newJoint, jointGroup )
-        cmds.xform( newJoint, t=(normVector.x, normVector.y, normVector.z) )
+        cmds.xform( newJoint, t=(trans[0] + normVector.x, trans[1] + normVector.y, trans[2] + normVector.z) )
         # Create an object and add to the group
         obj = cmds.polyCone()
         map = createObjMap(map, i, obj)
         cmds.parent( obj[0], group )
-        # Rotate the object to the normal
-        normVector.normalize()
-        xAxisVector = om.MVector( 1.0, 0.0, 0.0 )
-        yAxisVector = om.MVector( 0.0, 1.0, 0.0 )
-        zAxisVector = om.MVector( 0.0, 0.0, 1.0 )
-        # Find x rotation
-        t = normVector.angle( xAxisVector )
-        print 'Degree x: {0}'.format( np.rad2deg( t ) )
-        xMatrix = np.matrix( '{0}, {1}, {2}, {3}; {4}, {5}, {6}, {7}; {8}, {9}, {10}, {11}; {12}, {13}, {14}, {15}'.format( \
-            1.0, 0.0, 0.0, 0.0, 0.0, \
-            float(np.cos(t)), float(np.sin(t)), 0.0, 0.0, \
-            float(-np.sin(t)), float(np.cos(t)), 0.0, \
-            0.0, 0.0, 0.0, 1.0) )
-        # Find y rotation
-        t = normVector.angle( yAxisVector )
-        print 'Degree y: {0}'.format( np.rad2deg( t ) )
-        yMatrix = np.matrix( '{0}, {1}, {2}, {3}; {4}, {5}, {6}, {7}; {8}, {9}, {10}, {11}; {12}, {13}, {14}, {15}'.format( \
-            float(np.cos(t)), 0.0, float(-np.sin(t)), 0.0, \
-            0.0, 1.0, 0.0, 0.0, \
-            float(np.sin(t)), 0.0, float(np.cos(t)), 0.0, \
-            0.0, 0.0, 0.0, 1.0) )
-        # Find z rotation
-        t = normVector.angle( zAxisVector )
-        print 'Degree z: {0}'.format( np.rad2deg( t ) )
-        zMatrix = np.matrix( '{0}, {1}, {2}, {3}; {4}, {5}, {6}, {7}; {8}, {9}, {10}, {11}; {12}, {13}, {14}, {15}'.format( \
-            float(np.cos(t)), float(np.sin(t)), 0.0, 0.0, \
-            float(-np.sin(t)), float(np.cos(t)), 0.0, 0.0, \
-            0.0, 0.0, 1.0, 0.0, \
-            0.0, 0.0, 0.0, 1.0) )
-        # Store final matrix using matrix multiplication
-        finalMatrix = xMatrix * yMatrix * zMatrix
-        # Transform the final matrix into the input rotation matrix
-        rotMatrix = finalMatrix.getA1()
-        print rotMatrix
-        cmds.xform( obj, r=True, matrix=rotMatrix )
+        # Rotate the object so the y-axis aligns with the normal
+        epsilon = 0.001
+        delta = 0.05
+        x = 0.0
+        y = 0.0
+        z = 0.0
+        xRot = om.MEulerRotation(np.deg2rad(delta), 0.0, 0.0)
+        zRot = om.MEulerRotation(0.0, 0.0, np.deg2rad(delta))
+        # Setup planes to compare against
+        xCross = normVector ^ om.MVector( 1.0, 0.0, 0.0 )
+        zCross = normVector ^ om.MVector( 0.0, 0.0, 1.0 )
+        # Initialize comparison vectors
+        xDot = currVector * xCross
+        zDot = currVector * zCross
+        # X-axis match rotation
+        while (xDot < -epsilon) or (xDot > epsilon):
+            currVector = currVector.rotateBy( xRot )
+            x = x + delta
+            #print 'Norm: {0}, {1}, {2}'.format( normVector.x, normVector.y, normVector.z )
+            #print 'X Transformed: {0}, {1}, {2}'.format( currVector.x, currVector.y, currVector.z )
+            xDot = currVector * xCross
+            #print 'x = {0}, dot = {1}'.format( x, xDot )
+        # Z-axis match rotation
+        while (zDot < -epsilon) or (zDot > epsilon):
+            currVector = currVector.rotateBy( zRot )
+            z = z + delta
+            #print 'Norm: {0}, {1}, {2}'.format( normVector.x, normVector.y, normVector.z )
+            #print 'Z Transformed: {0}, {1}, {2}'.format( currVector.x, currVector.y, currVector.z )
+            zDot = currVector * zCross
+            #print 'z = {0}, dot = {1}'.format( z, zDot )
+        # Correct z-axis reflections
+        if normVector.z < 0:
+            if currVector.z > 0:
+                currVector.z = -currVector.z
+                z = z + 180
+        else:
+            if currVector.z < 0:
+                currVector.z = -currVector.z
+                z = z + 180
+        # Correct y-axis reflections
+        if normVector.y < 0:
+            if currVector.y > 0:
+                currVector.y = -currVector.y
+                y = 180
+        else:
+            if currVector.y < 0:
+                currVector.y = -currVector.y
+                y = 180
+                # Correct x-axis reflections
+        if normVector.x < 0:
+            if currVector.x > 0:
+                currVector.x = -currVector.x
+                x = x + 180
+        else:
+            if currVector.x < 0:
+                currVector.x = -currVector.x
+                x = x + 180
+        print '{0} ...'.format( i )
+        print 'Norm: {0}, {1}, {2}'.format( normVector.x, normVector.y, normVector.z )
+        print 'Transformed: {0}, {1}, {2}'.format( currVector.x, currVector.y, currVector.z )
+        print 'x = {0}, y = {1}, z = {2}'.format( x, y, z )
+        # Perform rotation
+        cmds.xform( obj, r=True, ro=(x, y, z) )
         # Translate object to vertex
         cmds.xform( obj, t=(trans[0], trans[1], trans[2]) )
     cmds.select( mesh )
