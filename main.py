@@ -1,7 +1,6 @@
 import maya.cmds as cmds
 import maya.OpenMaya as om
 import numpy as np
-print np.__version__
 from functools import partial
 
 ##########################
@@ -9,10 +8,29 @@ from functools import partial
 ##########################
 
 # Initialize groups of cubes that will be rendered
-def initLife(mesh, name, id, neighbors):
+def initLife(mesh, name, id, graph):
+    print 'Generating normals...'
+    # Initialize neighbors array
+    neighbors = []
+    cmds.select( name )
+    # Extract vertices
+    numVerts = cmds.polyEvaluate( v=True )
+    for i in range ( 0, numVerts ):
+        neighbors.append( [] )
+    for i in range ( 0, numVerts ):
+        print '... pass {0} out of {1}'.format( i, numVerts - 1 )
+        # Find 1st level neighbors
+        for j in graph[i]:
+            cmds.select( '{0}.e[{1}]'.format( name, j ) )
+            found = cmds.polyInfo( ev=True )
+            tokens = found[0].split( ' ' )
+            # Skip over non-alphanumeric strings
+            for t in tokens:
+                tmp = '{0}'.format( t )
+                if (tmp.isalnum() == True) and (tmp != 'EDGE') and (int(tmp) != i):
+                    neighbors[i].append( int(tmp) )
     print 'Initializing objects...'
     group = cmds.group( em=True, n=id )
-    jointGroup = cmds.group( em=True, n='jointGroup' )
     cmds.select( name )
     # Extract vertices
     numVerts = cmds.polyEvaluate( v=True )
@@ -23,99 +41,45 @@ def initLife(mesh, name, id, neighbors):
     for i in range ( 0, numVerts ):
         # Find the coordinates of each vertex
         trans = cmds.pointPosition( '{0}.vtx[{1}]'.format( name, i ) )
-        currVector = om.MVector( trans[0], trans[1], trans[2] )
+        #currVector = om.MVector( trans[0], trans[1], trans[2] )
+        currVector = om.MVector( 0.0, 1.0, 0.0 )
         currVector.normalize()
         neighborVectors = []
         # Find the vectors from each vertex to each neighbor
         for n in neighbors[i]:
-            if i == 0:
-                print '{0}: {1}'.format( i, n )
             vector = om.MVector()
             coord = cmds.pointPosition( '{0}.vtx[{1}]'.format( name, n ) )
             vector.x = coord[0] - trans[0]
             vector.y = coord[1] - trans[1]
             vector.z = coord[2] - trans[2]
+            vector.normalize()
             neighborVectors.append( vector )
         # Find the normal
         normVector = om.MVector( 0, 0, 0 )
         for vector in neighborVectors:
             normVector = normVector + vector
         normVector.normalize()
-        normVector.x = trans[0] - normVector.x
-        normVector.y = trans[1] - normVector.y
-        normVector.z = trans[2] - normVector.z
-        normVector.normalize()
+        normVector.x = -normVector.x
+        normVector.y = -normVector.y
+        normVector.z = -normVector.z
         # Create joint in order to test the calculated normal
-        newJoint = cmds.joint()
-        cmds.parent( newJoint, jointGroup )
-        cmds.xform( newJoint, t=(trans[0] + normVector.x, trans[1] + normVector.y, trans[2] + normVector.z) )
+        #newJoint = cmds.joint()
+        #cmds.parent( newJoint, jointGroup )
+        #cmds.xform( newJoint, t=(trans[0] + normVector.x, trans[1] + normVector.y, trans[2] + normVector.z) )
         # Create an object and add to the group
-        obj = cmds.polyCone()
+        obj = cmds.polyCube( sx=1, sy=1 )
         map = createObjMap(map, i, obj)
         cmds.parent( obj[0], group )
-        # Rotate the object so the y-axis aligns with the normal
-        epsilon = 0.001
-        delta = 0.05
-        x = 0.0
-        y = 0.0
-        z = 0.0
-        xRot = om.MEulerRotation(np.deg2rad(delta), 0.0, 0.0)
-        zRot = om.MEulerRotation(0.0, 0.0, np.deg2rad(delta))
-        # Setup planes to compare against
-        xCross = normVector ^ om.MVector( 1.0, 0.0, 0.0 )
-        zCross = normVector ^ om.MVector( 0.0, 0.0, 1.0 )
-        # Initialize comparison vectors
-        xDot = currVector * xCross
-        zDot = currVector * zCross
-        # X-axis match rotation
-        while (xDot < -epsilon) or (xDot > epsilon):
-            currVector = currVector.rotateBy( xRot )
-            x = x + delta
-            #print 'Norm: {0}, {1}, {2}'.format( normVector.x, normVector.y, normVector.z )
-            #print 'X Transformed: {0}, {1}, {2}'.format( currVector.x, currVector.y, currVector.z )
-            xDot = currVector * xCross
-            #print 'x = {0}, dot = {1}'.format( x, xDot )
-        # Z-axis match rotation
-        while (zDot < -epsilon) or (zDot > epsilon):
-            currVector = currVector.rotateBy( zRot )
-            z = z + delta
-            #print 'Norm: {0}, {1}, {2}'.format( normVector.x, normVector.y, normVector.z )
-            #print 'Z Transformed: {0}, {1}, {2}'.format( currVector.x, currVector.y, currVector.z )
-            zDot = currVector * zCross
-            #print 'z = {0}, dot = {1}'.format( z, zDot )
-        # Correct z-axis reflections
-        if normVector.z < 0:
-            if currVector.z > 0:
-                currVector.z = -currVector.z
-                z = z + 180
-        else:
-            if currVector.z < 0:
-                currVector.z = -currVector.z
-                z = z + 180
-        # Correct y-axis reflections
-        if normVector.y < 0:
-            if currVector.y > 0:
-                currVector.y = -currVector.y
-                y = 180
-        else:
-            if currVector.y < 0:
-                currVector.y = -currVector.y
-                y = 180
-                # Correct x-axis reflections
-        if normVector.x < 0:
-            if currVector.x > 0:
-                currVector.x = -currVector.x
-                x = x + 180
-        else:
-            if currVector.x < 0:
-                currVector.x = -currVector.x
-                x = x + 180
-        print '{0} ...'.format( i )
-        print 'Norm: {0}, {1}, {2}'.format( normVector.x, normVector.y, normVector.z )
-        print 'Transformed: {0}, {1}, {2}'.format( currVector.x, currVector.y, currVector.z )
-        print 'x = {0}, y = {1}, z = {2}'.format( x, y, z )
+        # First rotate X-axis to face the orientation angle by projecting normal onto the XZ-plane
+        projVector = om.MVector( normVector.x, 0.0, normVector.z )
+        orientX = cmds.angleBetween( euler=True, v1=( 1.0, 0.0, 0.0 ), v2=( projVector.x, projVector.y, projVector.z ) )
         # Perform rotation
-        cmds.xform( obj, r=True, ro=(x, y, z) )
+        cmds.xform( obj, r=True, ro=(orientX[0], orientX[1], orientX[2]) )
+        eulerRot = om.MEulerRotation( orientX[0], orientX[1], orientX[2], 0 )
+        currVector.rotateBy( eulerRot )
+        orientY = cmds.angleBetween( euler=True, v1=( currVector.x, currVector.y, currVector.z ), v2=( normVector.x, normVector.y, normVector.z ) )
+        # Perform rotation
+        cmds.xform( obj, r=True, ro=(orientY[0], orientY[1], orientY[2]) )
         # Translate object to vertex
         cmds.xform( obj, t=(trans[0], trans[1], trans[2]) )
     cmds.select( mesh )
@@ -247,8 +211,8 @@ def enumerateSeed(seed):
     count = 0
     for s in seed:
         if ':' not in seed[count].split('.vtx')[1]:
-            start = seed[count].split('.vtx')[1]
-            start = start.split('[')[1]
+            tmp = seed[count].split('.vtx')[1]
+            start = tmp.split('[')[1]
             start = start.split(']')[0]
             stop = ''
         else:
@@ -266,10 +230,13 @@ def enumerateSeed(seed):
     return pattern
 
 # Render the found matrix transforms
-def renderLife(objMap, curr, next, stepTime):
+def renderLife(objMap, curr, next, currTime, stepTime):
     i = 0
-    if stepTime < 2:
+    currTime = cmds.currentTime( q=True )
+    # A current time of 0 means the animation must be initialized
+    if currTime == 0:
         for obj in objMap:
+            cmds.currentTime( 0, edit=True )
             cmds.setAttr( '{0}.scaleX'.format( obj[0] ), next[i][0] )
             cmds.setAttr( '{0}.scaleY'.format( obj[0] ), next[i][1] )
             cmds.setAttr( '{0}.scaleZ'.format( obj[0] ), next[i][2] )
@@ -279,11 +246,11 @@ def renderLife(objMap, curr, next, stepTime):
             i = i + 1
     else:
         for obj in objMap:
-            if curr[i] != next[i][0]:
+            if curr[i] != next[i]:
+                cmds.currentTime( currTime, edit=True )
                 cmds.setKeyframe( '{0}.sx'.format( obj[0] ) )
                 cmds.setKeyframe( '{0}.sy'.format( obj[0] ) )
                 cmds.setKeyframe( '{0}.sz'.format( obj[0] ) )
-                currTime = cmds.currentTime( q=True )
                 cmds.currentTime( currTime + stepTime - 1, edit=True )
                 cmds.setKeyframe( '{0}.sx'.format( obj[0] ) )
                 cmds.setKeyframe( '{0}.sy'.format( obj[0] ) )
@@ -295,9 +262,9 @@ def renderLife(objMap, curr, next, stepTime):
                 cmds.setKeyframe( '{0}.sx'.format( obj[0] ) )
                 cmds.setKeyframe( '{0}.sy'.format( obj[0] ) )
                 cmds.setKeyframe( '{0}.sz'.format( obj[0] ) )
-                cmds.currentTime( currTime, edit=True )
             i = i + 1
-    cmds.currentTime( currTime + stepTime, edit=True )
+    cmds.currentTime( currTime + stepTime + 1, edit=True )
+    return currTime + stepTime + 1
 
 ##########################
 ### Main Functionality ###
@@ -315,7 +282,7 @@ def displayWindow():
     startTimeField = cmds.textField()
     cmds.text( label='Enter the time at which to end the animation:', al='left', ww=True )
     endTimeField = cmds.textField()
-    cmds.text( label='Enter the step time (this affects the speed of the animation):', al='left', ww=True )
+    cmds.text( label='Enter the step time greater than 2 (this affects the speed of the animation):', al='left', ww=True )
     stepTimeField = cmds.textField()
     cmds.button( label='Run', command=partial( startGame, menu, startTimeField, endTimeField, stepTimeField ) )
     cmds.text( l="\n", al='left' )
@@ -346,8 +313,8 @@ def startGame( menu, startTimeField, endTimeField, stepTimeField, *args ):
         displayWindow()
         return
     stepTime = cmds.textField(stepTimeField, q=True, tx=True )
-    if (stepTime == ''):
-        print 'ERROR: Please enter a step time.\n'
+    if (stepTime == '') or (int(stepTime) < 3):
+        print 'ERROR: Please enter a step time greater than 2.\n'
         # Delete menu window
         cmds.deleteUI( menu, window=True )
         displayWindow()
@@ -366,13 +333,11 @@ def startGame( menu, startTimeField, endTimeField, stepTimeField, *args ):
     # Find neighbors for each vertex
     neighbors = findNeighbors(graph, mesh, name)
     objGroup = 'lifeObjGroup'
-    objMap = initLife(mesh, name, objGroup, neighbors)
-    return
+    objMap = initLife(mesh, name, objGroup, graph)
     
     # Scale object matrix to 'dead' state
     factorDead = (0.0, 0.0, 0.0)
-    factorAlive = (0.5, 0.1, 0.5)
-    factorEmph = (2.0, 2.0, 2.0)
+    factorAlive = (0.6, 0.6, 0.6)
     scaleObjGroup(objGroup, factorDead)
     
     # Create storage matrices
@@ -380,34 +345,43 @@ def startGame( menu, startTimeField, endTimeField, stepTimeField, *args ):
     matrixB = createMatrix(name, factorDead)
     
     # Load seed pattern
+    print 'Loading Seed Pattern...'
     pattern = enumerateSeed(seed)
     matrixA = loadPattern(matrixA, pattern, factorAlive)
     
-    print matrixA
+    print 'Rendering Game of Life...'
     
     # Render first frame
     cmds.currentTime( int(startTime), edit=True )
-    renderLife(objMap, matrixA, 0)
+    currTime = renderLife(objMap, matrixB, matrixA, 0, int(stepTime))
     
     # Run the Game of Life on the mesh
-    currTime = int(startTime)
     while currTime < int(endTime):
+        print '... rendering frames {0} through {1}'.format( currTime, currTime + int(stepTime) )
         # Create matrix B from matrix A
+        updated = False
         for i in range ( 0, numVerts ):
             count = 0
             for n in neighbors[i]:
                 if matrixA[n] == factorAlive:
                     count = count + 1
             if count == 2:
-                matrixB[i] = matrixA[i]
+                if matrixB[i] != matrixA[i]:
+                    updated = True
+                    matrixB[i] = matrixA[i]
             if count == 3:
                 matrixB[i] = factorAlive
+                updated = True
             if count < 2 or count > 3:
                 matrixB[i] = factorDead
+        if updated == False:
+            print 'Equlibrium reached. Stopping Program.'
+            break;
+        currTime = renderLife(objMap, matrixA, matrixB, currTime, int(stepTime))
         for i in range ( 0, numVerts ):
             matrixA[i] = matrixB[i]
-        renderLife(objMap, matrixA, int(stepTime))
-        currTime = currTime + int(stepTime)
+        
+    print 'Program completed.'
 
 ##########################
 ####### Run Script #######
